@@ -1,9 +1,11 @@
 package clui
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
+	"github.com/ettle/strcase"
 	"github.com/fatih/color"
 	"github.com/kyokomi/emoji"
 	"github.com/olekukonko/tablewriter"
@@ -71,6 +73,15 @@ func (u *Message) Do() {
 
 // Msg prints a message on the CLI, resolving emoji as it goes
 func (u *Message) Msg(message string) {
+	switch u.ui.outputType {
+	case OutputTypeHuman:
+		u.humanMsg(message)
+	case OutputTypeJSON:
+		u.jsonMsg(message)
+	}
+}
+
+func (u *Message) humanMsg(message string) {
 	message = emoji.Sprint(message)
 
 	// Print a newline before starting output, if not compact.
@@ -145,6 +156,75 @@ func (u *Message) Msg(message string) {
 
 		table.Render()
 	}
+
+	if u.end > -1 {
+		os.Exit(u.end)
+	}
+}
+
+func (u *Message) jsonMsg(message string) {
+	output := map[string]interface{}{}
+
+	output["message"] = message
+
+	// Go through all the questions first
+	for _, interaction := range u.interactions {
+		if interaction.variant != ask {
+			continue
+		}
+
+		switch interaction.valueType {
+		case tBool:
+			*(interaction.value.(*bool)) = u.readBool(interaction.name, interaction.boolMap)
+		case tInt:
+			*(interaction.value.(*int64)) = u.readInt(interaction.name)
+		case tString:
+			*(interaction.value.(*string)) = u.readString(interaction.name)
+		case tPassword:
+			*(interaction.value.(*string)) = u.readPassword(interaction.name, interaction.stdin)
+		}
+	}
+
+	// Go through all outputs next
+	for _, interaction := range u.interactions {
+		if interaction.variant != show {
+			continue
+		}
+
+		output[interaction.name] = interaction.value
+	}
+
+	dataOutput := []map[string]interface{}{}
+
+	for idx, headers := range u.tableHeaders {
+		for rowIdx, row := range u.tableData[idx] {
+			if idx >= len(u.tableData) || rowIdx >= len(u.tableData[idx]) {
+				continue
+			}
+
+			dataRow := map[string]interface{}{}
+
+			for colIdx, colValue := range row {
+				if colIdx >= len(headers) {
+					continue
+				}
+
+				key := strcase.ToCamel(headers[colIdx])
+				dataRow[key] = colValue
+			}
+
+			dataOutput = append(dataOutput, dataRow)
+		}
+	}
+
+	output["data"] = dataOutput
+
+	jsonData, err := json.MarshalIndent(output, "", "  ")
+	if err != nil {
+		u.ui.printf("%s\n", color.RedString("%v", err))
+	}
+
+	u.ui.printf("%s\n", string(jsonData))
 
 	if u.end > -1 {
 		os.Exit(u.end)

@@ -9,6 +9,7 @@ import (
 	"github.com/fatih/color"
 )
 
+type OutputType int
 type msgType int
 type valueType int
 type valueVariant int
@@ -20,6 +21,11 @@ const (
 	note
 	success
 	progress
+)
+
+const (
+	OutputTypeHuman OutputType = iota
+	OutputTypeJSON
 )
 
 const (
@@ -40,6 +46,8 @@ const (
 type UI struct {
 	output io.Writer
 	input  io.Reader
+
+	outputType OutputType
 }
 
 // Message represents a piece of information we want displayed to the user
@@ -65,25 +73,22 @@ type interaction struct {
 }
 
 // NewUI creates a new UI
-func NewUI() *UI {
+func NewUI(opts ...UIOption) *UI {
+	ui := &UI{
+		output:     os.Stdout,
+		input:      os.Stdin,
+		outputType: OutputTypeHuman,
+	}
+
 	if runtime.GOOS == "windows" {
-		return NewUIWithOutput(color.Output)
-	} else {
-		return NewUIWithOutput(os.Stdout)
+		ui.output = color.Output
 	}
-}
 
-// NewUI creates a new UI with a specific output
-func NewUIWithOutput(output io.Writer) *UI {
-	return NewUIWithOutputAndInput(output, os.Stdin)
-}
-
-// NewUI creates a new UI with a specific input and output
-func NewUIWithOutputAndInput(output io.Writer, input io.Reader) *UI {
-	return &UI{
-		output: output,
-		input:  input,
+	for _, opt := range opts {
+		opt(ui)
 	}
+
+	return ui
 }
 
 // Input returns the io.Reader used to read user input
@@ -102,4 +107,9 @@ func (u *UI) printf(format string, args ...interface{}) {
 
 func (u *UI) println(args ...interface{}) {
 	u.output.Write([]byte(fmt.Sprintln(args...)))
+}
+
+// SetOutputType sets the output type of the UI
+func (u *UI) SetOutputType(outputType OutputType) {
+	u.outputType = outputType
 }
